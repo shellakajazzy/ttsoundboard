@@ -15,6 +15,7 @@ import subprocess
 # ~/~ begin <<README.md#ttsoundboard-globals>>[init]
 HTTP_PORT = 6973
 TCP_PORT = 5212
+FRAME_SIZE = 3840
 # ~/~ end
 # ~/~ begin <<README.md#ttsoundboard-globals>>[1]
 clients = []
@@ -45,10 +46,11 @@ class APIHandler(http.server.BaseHTTPRequestHandler):
             # ~/~ end
             # ~/~ begin <<README.md#ttsoundboard-api-cases>>[2]
             case "/stop":
-                stop_event.set()
+                pause_event.set()
                 while not audio_arg_queue.empty():
                     try: audio_arg_queue.get_nowait()
                     except queue.Empty: break
+                pause_event.clear()
                 self.respond(200, {"status": "stopped"})
             # ~/~ end
             # ~/~ begin <<README.md#ttsoundboard-api-cases>>[3]
@@ -86,16 +88,17 @@ class AudioThread(threading.Thread):
         while True:
             audio_arg = audio_arg_queue.get()
             if audio_arg is None: continue
-            stop_event.clear()
             self.stream_audio_arg(audio_arg)
     # ~/~ begin <<README.md#ttsoundboard-audiothread>>[init]
     def broadcast(self, chunk):
         with clients_lock:
             dead = []
             for c in clients:
+                print(f"Sending information to client {c}")
                 try: c.sendall(chunk)
-                except: dead.append(c)
-            for d in dead: clients.remove(d)
+                except Exception as e:
+                    dead.append(c)
+                    print(f"Could not send to client {c} because {str(e)}")
     # ~/~ end
     # ~/~ begin <<README.md#ttsoundboard-audiothread>>[1]
     def stream_audio_arg(self, audio_arg):
@@ -111,13 +114,9 @@ class AudioThread(threading.Thread):
     
         try:
             while True:
-                if stop_event.is_set():
-                    proc.kill()
-                    break
-    
                 pause_event.wait()
     
-                chunk = proc.stdout.read(1024)
+                chunk = proc.stdout.read(FRAME_SIZE)
                 if not chunk: break
     
                 self.broadcast(chunk)
