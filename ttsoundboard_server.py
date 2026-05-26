@@ -16,6 +16,7 @@ import subprocess
 HTTP_PORT = 6973
 TCP_PORT = 5212
 FRAME_SIZE = 3840
+TTS_VOICE = "en+m1"
 # ~/~ end
 # ~/~ begin <<README.md#ttsoundboard-globals>>[1]
 clients = []
@@ -23,8 +24,6 @@ clients_lock = threading.Lock()
 # ~/~ end
 # ~/~ begin <<README.md#ttsoundboard-globals>>[2]
 audio_arg_queue = queue.Queue()
-stop_event = threading.Event()
-stop_event.clear()
 pause_event = threading.Event()
 pause_event.set()
 # ~/~ end
@@ -36,21 +35,21 @@ class APIHandler(http.server.BaseHTTPRequestHandler):
         match self.path:
             # ~/~ begin <<README.md#ttsoundboard-api-cases>>[init]
             case "/pause":
-                pause_event.set()
+                pause_event.clear()
                 self.respond(200, {"status": "paused"})
             # ~/~ end
             # ~/~ begin <<README.md#ttsoundboard-api-cases>>[1]
             case "/resume":
-                pause_event.clear()
+                pause_event.set()
                 self.respond(200, {"status": "playing"})
             # ~/~ end
             # ~/~ begin <<README.md#ttsoundboard-api-cases>>[2]
             case "/stop":
-                pause_event.set()
+                pause_event.clear()
                 while not audio_arg_queue.empty():
                     try: audio_arg_queue.get_nowait()
                     except queue.Empty: break
-                pause_event.clear()
+                pause_event.set()
                 self.respond(200, {"status": "stopped"})
             # ~/~ end
             # ~/~ begin <<README.md#ttsoundboard-api-cases>>[3]
@@ -58,6 +57,12 @@ class APIHandler(http.server.BaseHTTPRequestHandler):
                 audio_arg = body.decode()
                 audio_arg_queue.put(audio_arg)
                 self.respond(200, {"status": "queued", "audio_arg": audio_arg})
+            # ~/~ end
+            # ~/~ begin <<README.md#ttsoundboard-api-cases>>[4]
+            case "/voice":
+                global TTS_VOICE
+                TTS_VOICE = body.decode()
+                self.respond(200, {"status": "voice changed", "voice": TTS_VOICE})
             # ~/~ end
             case _: self.send_error(400)
     def respond(self, response, obj = {}):
@@ -102,9 +107,11 @@ class AudioThread(threading.Thread):
     # ~/~ end
     # ~/~ begin <<README.md#ttsoundboard-audiothread>>[1]
     def stream_audio_arg(self, audio_arg):
+        global TTS_VOICE
         proc = subprocess.Popen(
             [
                 "espeak-ng",
+                "-v", TTS_VOICE,
                 "--stdout",
                 audio_arg
             ],

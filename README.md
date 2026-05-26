@@ -27,6 +27,7 @@ I might change these, so I put them here to be easily accessible.
 HTTP_PORT = 6973
 TCP_PORT = 5212
 FRAME_SIZE = 3840
+TTS_VOICE = "en+m1"
 ```
 
 ### API Handler
@@ -114,8 +115,6 @@ Additionally, events need to be created that will tell the thread to pause, resu
 `ttsoundboard-globals`:
 ``` {.python #ttsoundboard-globals}
 audio_arg_queue = queue.Queue()
-stop_event = threading.Event()
-stop_event.clear()
 pause_event = threading.Event()
 pause_event.set()
 ```
@@ -151,9 +150,11 @@ Then, there needs to be a method to process the audio argument, generate the aud
 `ttsoundboard-audiothread`:
 ``` {.python #ttsoundboard-audiothread}
 def stream_audio_arg(self, audio_arg):
+    global TTS_VOICE
     proc = subprocess.Popen(
         [
             "espeak-ng",
+            "-v", TTS_VOICE,
             "--stdout",
             audio_arg
         ],
@@ -193,7 +194,7 @@ if __name__ == "__main__":
 `ttsoundboard-api-cases`:
 ``` {.python #ttsoundboard-api-cases}
 case "/pause":
-    pause_event.set()
+    pause_event.clear()
     self.respond(200, {"status": "paused"})
 ```
 
@@ -202,7 +203,7 @@ case "/pause":
 `ttsoundboard-api-cases`:
 ``` {.python #ttsoundboard-api-cases}
 case "/resume":
-    pause_event.clear()
+    pause_event.set()
     self.respond(200, {"status": "playing"})
 ```
 
@@ -211,11 +212,11 @@ case "/resume":
 `ttsoundboard-api-cases`:
 ``` {.python #ttsoundboard-api-cases}
 case "/stop":
-    pause_event.set()
+    pause_event.clear()
     while not audio_arg_queue.empty():
         try: audio_arg_queue.get_nowait()
         except queue.Empty: break
-    pause_event.clear()
+    pause_event.set()
     self.respond(200, {"status": "stopped"})
 ```
 
@@ -227,6 +228,16 @@ case "/speak":
     audio_arg = body.decode()
     audio_arg_queue.put(audio_arg)
     self.respond(200, {"status": "queued", "audio_arg": audio_arg})
+```
+
+### Voice Change Command
+
+`ttsoundboard-api-cases`:
+``` {.python #ttsoundboard-api-cases}
+case "/voice":
+    global TTS_VOICE
+    TTS_VOICE = body.decode()
+    self.respond(200, {"status": "voice changed", "voice": TTS_VOICE})
 ```
 
 ## Discord Bot
@@ -350,8 +361,12 @@ match (message.content):
         print("Sent stop API request")
         requests.post(f"http://{TTSOUNDBOARD_IP}:{TTSOUNDBOARD_API_PORT}/stop")
     case _:
-        print("Sending message to be spoken")
-        requests.post(f"http://{TTSOUNDBOARD_IP}:{TTSOUNDBOARD_API_PORT}/speak", data=message.content.encode())
+        if message.content[:2] == ";v":
+            print(f"Changing voice to {message.content[3:]}")
+            requests.post(f"http://{TTSOUNDBOARD_IP}:{TTSOUNDBOARD_API_PORT}/voice", data=message.content[3:].encode())
+        else:
+            print("Sending message to be spoken")
+            requests.post(f"http://{TTSOUNDBOARD_IP}:{TTSOUNDBOARD_API_PORT}/speak", data=message.content.encode())
 ```
 
 ### Connect to Voice Channel

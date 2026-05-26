@@ -81,8 +81,12 @@ async def on_message(message):
             print("Sent stop API request")
             requests.post(f"http://{TTSOUNDBOARD_IP}:{TTSOUNDBOARD_API_PORT}/stop")
         case _:
-            print("Sending message to be spoken")
-            requests.post(f"http://{TTSOUNDBOARD_IP}:{TTSOUNDBOARD_API_PORT}/speak", data=message.content.encode())
+            if message.content[:2] == ";v":
+                print(f"Changing voice to {message.content[3:]}")
+                requests.post(f"http://{TTSOUNDBOARD_IP}:{TTSOUNDBOARD_API_PORT}/voice", data=message.content[3:].encode())
+            else:
+                print("Sending message to be spoken")
+                requests.post(f"http://{TTSOUNDBOARD_IP}:{TTSOUNDBOARD_API_PORT}/speak", data=message.content.encode())
     # ~/~ end
 # ~/~ end
 # ~/~ begin <<README.md#discord-client-functions>>[1]
